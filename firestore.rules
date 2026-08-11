@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true;
+    }
+
+    // Admin 문서는 Firebase Console/Admin SDK에서만 생성·변경하는 것을 권장합니다.
+    match /admins/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create, update, delete: if false;
+    }
+
+    // 관리자 웹이 다루는 운영 데이터. 교사/학생 앱용 세부 규칙은 이후 역할별로 분리하세요.
+    match /schools/{id} { allow read, write: if isAdmin(); }
+    match /classes/{id} { allow read, write: if isAdmin(); }
+    match /teachers/{id} { allow read, write: if isAdmin(); }
+    match /students/{id} { allow read, write: if isAdmin(); }
+    match /system/{id} { allow read, write: if isAdmin(); }
+    match /auditLogs/{id} { allow read, create: if isAdmin(); allow update, delete: if false; }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

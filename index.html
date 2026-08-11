@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#4665f5" />
+  <title>HG Attendance Admin</title>
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="loginView" class="login-shell">
+    <div class="login-card">
+      <div class="brand-mark">A</div>
+      <h1>Attendance Admin</h1>
+      <p>학교·반·선생님·학생·출석 시스템을 한곳에서 관리합니다.</p>
+      <button id="googleLoginBtn" class="primary-btn">Google로 관리자 로그인</button>
+      <div class="subtle">관리자 권한이 등록된 Google 계정만 접근할 수 있습니다.</div>
+    </div>
+  </div>
+
+  <div id="deniedView" class="login-shell hidden">
+    <div class="login-card wide">
+      <div class="brand-mark warning">!</div>
+      <h1>관리자 권한이 없습니다</h1>
+      <p>Firestore의 <code>admins/{uid}</code> 문서에 이 계정을 등록해야 합니다.</p>
+      <div class="uid-box">
+        <span id="deniedEmail"></span>
+        <code id="deniedUid"></code>
+      </div>
+      <button id="copyUidBtn" class="secondary-btn">UID 복사</button>
+      <button id="deniedLogoutBtn" class="text-btn">다른 계정으로 로그인</button>
+    </div>
+  </div>
+
+  <div id="appView" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="brand-row">
+        <div class="brand-mark small">A</div>
+        <div><strong>Attendance</strong><span>Admin Console</span></div>
+      </div>
+      <nav id="nav">
+        <button data-page="dashboard" class="nav-item active">대시보드</button>
+        <button data-page="schools" class="nav-item">학교</button>
+        <button data-page="classes" class="nav-item">반</button>
+        <button data-page="teachers" class="nav-item">선생님</button>
+        <button data-page="students" class="nav-item">학생</button>
+        <button data-page="system" class="nav-item">시스템 설정</button>
+        <button data-page="audit" class="nav-item">감사 로그</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="admin-chip">
+          <div class="avatar" id="adminAvatar">A</div>
+          <div><strong id="adminName">관리자</strong><span id="adminEmail"></span></div>
+        </div>
+        <button id="logoutBtn" class="text-btn left">로그아웃</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h2 id="pageTitle">대시보드</h2>
+          <p id="pageSubtitle">전체 시스템 현황을 확인합니다.</p>
+        </div>
+        <div class="status-pill"><span class="dot"></span>Firebase 연결됨</div>
+      </header>
+
+      <section id="page-dashboard" class="page active">
+        <div class="metric-grid">
+          <article class="metric"><span>등록 학교</span><strong id="metricSchools">0</strong></article>
+          <article class="metric"><span>활성 반</span><strong id="metricClasses">0</strong></article>
+          <article class="metric"><span>등록 선생님</span><strong id="metricTeachers">0</strong></article>
+          <article class="metric"><span>등록 학생</span><strong id="metricStudents">0</strong></article>
+        </div>
+        <div class="two-col">
+          <section class="panel">
+            <div class="panel-head"><div><h3>최근 개설된 반</h3><p>실시간 Firestore 데이터</p></div></div>
+            <div id="recentClasses" class="list"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><div><h3>시스템 상태</h3><p>운영 설정 요약</p></div></div>
+            <div id="systemSummary" class="summary-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="page-schools" class="page">
+        <section class="panel">
+          <div class="panel-head wrap"><div><h3>학교 관리</h3><p>학생 앱에서 검색 가능한 학교 목록입니다.</p></div><button id="addSchoolBtn" class="primary-btn compact">학교 추가</button></div>
+          <div class="toolbar"><input id="schoolSearch" class="search" placeholder="학교명 검색" /></div>
+          <div class="table-wrap"><table><thead><tr><th>학교명</th><th>상태</th><th>등록일</th><th></th></tr></thead><tbody id="schoolsBody"></tbody></table></div>
+        </section>
+      </section>
+
+      <section id="page-classes" class="page">
+        <section class="panel">
+          <div class="panel-head"><div><h3>반 관리</h3><p>개설된 반과 출석 위치 설정을 관리합니다.</p></div></div>
+          <div class="toolbar"><input id="classSearch" class="search" placeholder="학교, 반, 선생님 검색" /></div>
+          <div class="table-wrap"><table><thead><tr><th>학교</th><th>반</th><th>선생님</th><th>출석 반경</th><th>상태</th><th></th></tr></thead><tbody id="classesBody"></tbody></table></div>
+        </section>
+      </section>
+
+      <section id="page-teachers" class="page">
+        <section class="panel">
+          <div class="panel-head"><div><h3>선생님 관리</h3><p>교사 계정의 상태와 담당 반을 확인합니다.</p></div></div>
+          <div class="toolbar"><input id="teacherSearch" class="search" placeholder="이름 또는 이메일 검색" /></div>
+          <div class="table-wrap"><table><thead><tr><th>이름</th><th>이메일</th><th>담당 반</th><th>상태</th><th></th></tr></thead><tbody id="teachersBody"></tbody></table></div>
+        </section>
+      </section>
+
+      <section id="page-students" class="page">
+        <section class="panel">
+          <div class="panel-head"><div><h3>학생 관리</h3><p>학번·이름·소속 반·계정 상태를 관리합니다.</p></div></div>
+          <div class="toolbar"><input id="studentSearch" class="search" placeholder="학번 또는 이름 검색" /></div>
+          <div class="table-wrap"><table><thead><tr><th>학번</th><th>이름</th><th>소속 반</th><th>상태</th><th></th></tr></thead><tbody id="studentsBody"></tbody></table></div>
+        </section>
+      </section>
+
+      <section id="page-system" class="page">
+        <section class="panel narrow-panel">
+          <div class="panel-head"><div><h3>시스템 설정</h3><p>전체 서비스의 기본 운영값입니다.</p></div></div>
+          <div class="form-grid">
+            <label class="field"><span>기본 출석 인정 반경</span><input id="defaultRadius" type="number" min="150" max="1000" step="50" /><small>150m ~ 1,000m</small></label>
+            <label class="switch-row"><span><strong>신규 가입 허용</strong><small>학생의 신규 반 가입 요청을 받습니다.</small></span><input id="registrationEnabled" type="checkbox" /></label>
+            <label class="switch-row"><span><strong>유지보수 모드</strong><small>활성화하면 일반 사용자 기능을 제한하는 데 사용할 수 있습니다.</small></span><input id="maintenanceMode" type="checkbox" /></label>
+          </div>
+          <button id="saveSystemBtn" class="primary-btn">시스템 설정 저장</button>
+        </section>
+      </section>
+
+      <section id="page-audit" class="page">
+        <section class="panel">
+          <div class="panel-head"><div><h3>감사 로그</h3><p>관리자 변경 작업을 기록합니다.</p></div></div>
+          <div id="auditList" class="audit-list"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <div id="modalBackdrop" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-head"><h3 id="modalTitle">수정</h3><button id="modalCloseBtn" class="icon-btn">×</button></div>
+      <div id="modalBody"></div>
+      <div class="modal-actions"><button id="modalCancelBtn" class="secondary-btn">취소</button><button id="modalSaveBtn" class="primary-btn compact">저장</button></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

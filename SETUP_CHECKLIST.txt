@@ -1,0 +1,19 @@
+HG ATTENDANCE ADMIN - 배포 체크리스트
+
+[ ] Firebase Console에 Web App 추가
+[ ] firebase-config.js 값 교체
+[ ] Firebase Authentication > Google 활성화
+[ ] GitHub 새 저장소 생성
+[ ] ZIP 내용 전체를 저장소 루트에 업로드
+[ ] GitHub Settings > Pages > Deploy from a branch > main / root
+[ ] Pages 주소 확인
+[ ] Firebase Authentication > Authorized domains에 GitHub Pages 도메인 추가
+[ ] 관리자 사이트에서 Google 로그인 1회 시도
+[ ] 화면에 나온 UID 복사
+[ ] Firestore admins/{UID} 생성
+    active = true (Boolean)
+    role = super_admin (String)
+    displayName = 관리자 이름 (String)
+[ ] 다시 로그인하여 대시보드 진입 확인
+[ ] 학생/교사용 앱 연동 완료 전까지 Firestore Test Mode 만료일 확인
+[ ] 실서비스 전 firestore.rules를 학생/교사 역할 규칙과 통합 배포
