@@ -1,12 +1,13 @@
-// Firebase Web App configuration for HG Attendance DEV.
+// Firebase Web App configuration for HG Attendance PROD.
 // This config identifies the Firebase project/app; authorization is enforced by Firebase Auth,
 // Firestore Security Rules, and App Check rather than by hiding these values.
 export const firebaseConfig = {
-  apiKey: "AIzaSyAfUS2bCNXs2mClKqf8SNmdbX1RIpkXBW4",
-  authDomain: "hg-attendance-dev.firebaseapp.com",
-  projectId: "hg-attendance-dev",
-  storageBucket: "hg-attendance-dev.firebasestorage.app",
-  messagingSenderId: "568844691131",
-  appId: "1:568844691131:web:f815f3ee8e16b823d26b9e",
-  measurementId: "G-XCTH9K1SZN"
+  apiKey: "AIzaSyDaloHRpoItaywECwtj3tysrjWRK3po6Ro",
+  authDomain: "hg-attendance-prod.firebaseapp.com",
+  databaseURL: "https://hg-attendance-prod-default-rtdb.firebaseio.com",
+  projectId: "hg-attendance-prod",
+  storageBucket: "hg-attendance-prod.firebasestorage.app",
+  messagingSenderId: "402077431077",
+  appId: "1:402077431077:web:58f850bcc4e2b8ac0796cc",
+  measurementId: "G-XFSGZT4JQK"
 };
