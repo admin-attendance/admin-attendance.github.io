@@ -3,7 +3,7 @@ import {
   getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js';
 import {
-  getFirestore, collection, doc, getDoc, setDoc, updateDoc, addDoc,
+  getFirestore, collection, doc, getDoc, setDoc, updateDoc, addDoc, deleteDoc,
   onSnapshot, query, orderBy, limit, serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -88,8 +88,8 @@ function renderTeachers(){
   $('teachersBody').innerHTML=rows.length?rows.map(t=>{ const assigned=state.classes.filter(c=>c.teacherUid===t.id).map(classLabel).join(', ')||'-'; const active=t.active!==false&&t.status!=='disabled'; return `<tr><td><strong>${esc(t.displayName||t.googleName||'이름 미설정')}</strong><small>${esc(t.id)}</small></td><td>${esc(t.email||'-')}</td><td>${esc(assigned)}</td><td>${statusBadge(active)}</td><td class="actions"><button class="mini-btn" data-action="teacher-edit" data-id="${esc(t.id)}">관리</button></td></tr>`; }).join(''):'<tr><td colspan="5" class="empty">선생님이 없습니다.</td></tr>';
 }
 function renderStudents(){
-  const rows=filtered(state.students,'studentSearch',s=>`${s.studentNumber||''} ${s.name||''}`);
-  $('studentsBody').innerHTML=rows.length?rows.map(s=>{ const c=state.classes.find(x=>x.id===s.classId); const active=s.active!==false&&s.status!=='disabled'; return `<tr><td>${esc(s.studentNumber||'-')}</td><td><strong>${esc(s.name||'이름 미설정')}</strong><small>${esc(s.id)}</small></td><td>${esc(c?`${c.schoolName||''} ${classLabel(c)}`:(s.className||'-'))}</td><td>${statusBadge(active)}</td><td class="actions"><button class="mini-btn" data-action="student-edit" data-id="${esc(s.id)}">관리</button></td></tr>`; }).join(''):'<tr><td colspan="5" class="empty">학생이 없습니다.</td></tr>';
+  const rows=filtered(state.students,'studentSearch',s=>`${s.studentNumber||''} ${s.name||s.studentName||''}`);
+  $('studentsBody').innerHTML=rows.length?rows.map(s=>{ const c=state.classes.find(x=>x.id===s.classId); const active=s.active!==false&&s.status!=='disabled'; const studentName=s.name||s.studentName||'이름 미설정'; return `<tr><td>${esc(s.studentNumber||'-')}</td><td><strong>${esc(studentName)}</strong><small>${esc(s.id)}</small></td><td>${esc(c?`${c.schoolName||''} ${classLabel(c)}`:(s.className||'-'))}</td><td>${statusBadge(active)}</td><td class="actions"><button class="mini-btn" data-action="student-edit" data-id="${esc(s.id)}">관리</button></td></tr>`; }).join(''):'<tr><td colspan="5" class="empty">학생이 없습니다.</td></tr>';
 }
 function renderSystem(){ $('defaultRadius').value=state.system.defaultAttendanceRadiusMeters||300; $('registrationEnabled').checked=state.system.registrationEnabled!==false; $('maintenanceMode').checked=state.system.maintenanceMode===true; }
 function renderAudit(){ $('auditList').innerHTML=state.audit.length?state.audit.map(a=>`<div class="audit-row"><div class="audit-icon">•</div><div><strong>${esc(a.action||'변경')}</strong><span>${esc(a.details||`${a.targetType||''} ${a.targetId||''}`)}</span><small>${esc(a.adminEmail||'')} · ${dateText(a.createdAt)}</small></div></div>`).join(''):'<div class="empty">기록된 관리자 작업이 없습니다.</div>'; }
@@ -107,9 +107,31 @@ function schoolModal(id=null){
     await writeAudit(id?'학교 수정':'학교 추가','school',ref.id,name); closeModal(); toast('저장했습니다.');
   });
 }
+
+async function deleteClass(id){
+  const c=state.classes.find(x=>x.id===id); if(!c)return;
+  const assignedStudents=state.students.filter(s=>s.classId===id);
+  if(assignedStudents.length){
+    toast(`학생 ${assignedStudents.length}명이 소속되어 있어 반을 삭제할 수 없습니다. 먼저 학생의 소속을 정리하세요.`,true);
+    return;
+  }
+  const ok=window.confirm(`"${c.schoolName||''} ${classLabel(c)}" 반을 완전히 삭제할까요?\n\n삭제하면 학생 앱의 반 목록에서도 즉시 사라집니다.`);
+  if(!ok)return;
+  try{
+    await deleteDoc(doc(db,'classes',id));
+    await writeAudit('반 삭제','class',id,`${c.schoolName||''} ${classLabel(c)}`);
+    closeModal();
+    toast('반을 삭제했습니다.');
+  }catch(e){
+    console.error(e);
+    toast(`반 삭제 실패: ${e.message}`,true);
+  }
+}
+
 function classModal(id){
   const c=state.classes.find(x=>x.id===id); if(!c)return;
-  openModal('반 관리',`<div class="info-box"><strong>${esc(c.schoolName||'-')} · ${esc(classLabel(c))}</strong><span>${esc(c.teacherName||'담당교사 미지정')}</span></div><label class="field"><span>출석 인정 반경 (m)</span><input id="mClassRadius" type="number" min="150" max="1000" step="50" value="${esc(c.attendanceRadiusMeters||300)}" /><small>최소 150m, 최대 1,000m</small></label><label class="switch-row"><span><strong>반 활성</strong><small>비활성화하면 신규 가입/출석에서 제외할 수 있습니다.</small></span><input id="mClassActive" type="checkbox" ${c.active===false?'':'checked'} /></label>`,async()=>{
+  const assignedCount=state.students.filter(s=>s.classId===id).length;
+  openModal('반 관리',`<div class="info-box"><strong>${esc(c.schoolName||'-')} · ${esc(classLabel(c))}</strong><span>${esc(c.teacherName||'담당교사 미지정')}</span></div><label class="field"><span>출석 인정 반경 (m)</span><input id="mClassRadius" type="number" min="150" max="1000" step="50" value="${esc(c.attendanceRadiusMeters||300)}" /><small>최소 150m, 최대 1,000m</small></label><label class="switch-row"><span><strong>반 활성</strong><small>비활성화하면 신규 가입/출석에서 제외할 수 있습니다.</small></span><input id="mClassActive" type="checkbox" ${c.active===false?'':'checked'} /></label><div style="margin-top:18px;padding:16px;border:1px solid #ffd5d9;border-radius:15px;background:#fff8f8;display:flex;align-items:center;justify-content:space-between;gap:14px"><div style="display:grid;gap:4px"><strong style="color:#ba3545">반 삭제</strong><small style="color:#9b5962">${assignedCount?`현재 학생 ${assignedCount}명이 소속되어 있어 삭제할 수 없습니다.`:'반 문서를 Firestore에서 완전히 삭제합니다.'}</small></div><button class="secondary-btn" style="background:#fff0f1;color:#ba3545" type="button" data-action="class-delete" data-id="${esc(id)}" ${assignedCount?'disabled':''}>반 삭제</button></div>`,async()=>{
     const radius=Number($('mClassRadius').value); if(radius<150||radius>1000) return toast('반경은 150~1000m여야 합니다.',true);
     await updateDoc(doc(db,'classes',id),{attendanceRadiusMeters:Math.round(radius),active:$('mClassActive').checked,updatedAt:serverTimestamp()});
     await writeAudit('반 설정 수정','class',id,`${c.schoolName||''} ${classLabel(c)} / ${radius}m`); closeModal(); toast('반 설정을 저장했습니다.');
@@ -127,10 +149,11 @@ function teacherModal(id){
 function studentModal(id){
   const s=state.students.find(x=>x.id===id); if(!s)return;
   const active=s.active!==false&&s.status!=='disabled';
-  openModal('학생 관리',`<label class="field"><span>학번</span><input id="mStudentNo" value="${esc(s.studentNumber||'')}" /></label><label class="field"><span>이름</span><input id="mStudentName" value="${esc(s.name||'')}" /></label><label class="switch-row"><span><strong>계정 활성</strong><small>학생 앱 사용 가능 상태입니다.</small></span><input id="mStudentActive" type="checkbox" ${active?'checked':''} /></label><label class="switch-row"><span><strong>PIN 초기화 요청</strong><small>현재 PIN은 표시하지 않습니다. 학생에게 새 PIN 설정을 요구합니다.</small></span><input id="mPinReset" type="checkbox" /></label>`,async()=>{
+  const studentName=s.name||s.studentName||'';
+  openModal('학생 관리',`<label class="field"><span>학번</span><input id="mStudentNo" value="${esc(s.studentNumber||'')}" /></label><label class="field"><span>이름</span><input id="mStudentName" value="${esc(studentName)}" /></label><label class="switch-row"><span><strong>계정 활성</strong><small>학생 앱 사용 가능 상태입니다.</small></span><input id="mStudentActive" type="checkbox" ${active?'checked':''} /></label><label class="switch-row"><span><strong>PIN 초기화 요청</strong><small>현재 PIN은 표시하지 않습니다. 학생에게 새 PIN 설정을 요구합니다.</small></span><input id="mPinReset" type="checkbox" /></label>`,async()=>{
     const studentNumber=$('mStudentNo').value.trim(), name=$('mStudentName').value.trim(); if(!studentNumber||!name)return toast('학번과 이름을 입력하세요.',true);
     const v=$('mStudentActive').checked, reset=$('mPinReset').checked;
-    const patch={studentNumber,name,active:v,status:v?'active':'disabled',updatedAt:serverTimestamp()};
+    const patch={studentNumber,name,studentName:name,active:v,status:v?'active':'disabled',updatedAt:serverTimestamp()};
     if(reset){ patch.pinResetRequired=true; patch.pinResetRequestedAt=serverTimestamp(); }
     await updateDoc(doc(db,'students',id),patch);
     await writeAudit('학생 정보 수정','student',id,`${studentNumber} ${name}${reset?' / PIN 초기화 요청':''}`); closeModal(); toast('학생 정보를 저장했습니다.');
@@ -146,7 +169,7 @@ $('addSchoolBtn').onclick=()=>schoolModal();
 $('saveSystemBtn').onclick=async()=>{ const r=Number($('defaultRadius').value); if(r<150||r>1000)return toast('기본 반경은 150~1000m여야 합니다.',true); try{ await setDoc(doc(db,'system','config'),{defaultAttendanceRadiusMeters:Math.round(r),registrationEnabled:$('registrationEnabled').checked,maintenanceMode:$('maintenanceMode').checked,updatedAt:serverTimestamp()},{merge:true}); await writeAudit('시스템 설정 변경','system','config',`기본반경 ${r}m`); toast('시스템 설정을 저장했습니다.'); }catch(e){toast(`저장 실패: ${e.message}`,true);} };
 
 ['schoolSearch','classSearch','teacherSearch','studentSearch'].forEach(id=>$(id).addEventListener('input',renderAll));
-document.addEventListener('click',e=>{ const b=e.target.closest('[data-action]'); if(!b)return; const {action,id}=b.dataset; if(action==='school-edit')schoolModal(id); if(action==='class-edit')classModal(id); if(action==='teacher-edit')teacherModal(id); if(action==='student-edit')studentModal(id); });
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-action]'); if(!b)return; const {action,id}=b.dataset; if(action==='school-edit')schoolModal(id); if(action==='class-edit')classModal(id); if(action==='class-delete')deleteClass(id); if(action==='teacher-edit')teacherModal(id); if(action==='student-edit')studentModal(id); });
 $('nav').addEventListener('click',e=>{ const b=e.target.closest('[data-page]'); if(!b)return; const p=b.dataset.page; document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x===b)); document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===`page-${p}`)); $('pageTitle').textContent=pageMeta[p][0]; $('pageSubtitle').textContent=pageMeta[p][1]; });
 
 onAuthStateChanged(auth,async user=>{
