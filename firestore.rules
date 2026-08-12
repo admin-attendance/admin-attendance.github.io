@@ -1,30 +1,209 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
     function signedIn() {
       return request.auth != null;
     }
 
-    function isAdmin() {
+    function isGoogleUser() {
       return signedIn()
-        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true;
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
     }
 
-    // Admin 문서는 Firebase Console/Admin SDK에서만 생성·변경하는 것을 권장합니다.
+    function adminDoc() {
+      return /databases/$(database)/documents/admins/$(request.auth.uid);
+    }
+
+    function teacherDoc() {
+      return /databases/$(database)/documents/teachers/$(request.auth.uid);
+    }
+
+    function classDoc(classId) {
+      return /databases/$(database)/documents/classes/$(classId);
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(adminDoc())
+        && get(adminDoc()).data.active == true;
+    }
+
+    function isActiveTeacher() {
+      return isGoogleUser()
+        && exists(teacherDoc())
+        && get(teacherDoc()).data.active != false
+        && get(teacherDoc()).data.status != 'disabled';
+    }
+
+    // 관리자 계정 문서는 Firebase Console 또는 Admin SDK에서만 생성/변경합니다.
     match /admins/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow create, update, delete: if false;
     }
 
-    // 관리자 웹이 다루는 운영 데이터. 교사/학생 앱용 세부 규칙은 이후 역할별로 분리하세요.
-    match /schools/{id} { allow read, write: if isAdmin(); }
-    match /classes/{id} { allow read, write: if isAdmin(); }
-    match /teachers/{id} { allow read, write: if isAdmin(); }
-    match /students/{id} { allow read, write: if isAdmin(); }
-    match /system/{id} { allow read, write: if isAdmin(); }
-    match /auditLogs/{id} { allow read, create: if isAdmin(); allow update, delete: if false; }
+    // 학교: 관리자는 전체 관리, 로그인 사용자는 활성 학교 조회.
+    match /schools/{schoolId} {
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.active != false);
+      allow create, update, delete: if isAdmin();
+    }
 
+    // 반:
+    // - 학생(익명 인증 포함)은 active == true인 반을 조회
+    // - 교사는 본인 반을 조회/생성/수정/삭제
+    // - 관리자는 전체 관리
+    match /classes/{classId} {
+      allow read: if isAdmin()
+        || (
+          signedIn()
+          && (
+            resource.data.active == true
+            || resource.data.teacherUid == request.auth.uid
+          )
+        );
+
+      allow create: if isAdmin()
+        || (
+          isActiveTeacher()
+          && request.resource.data.teacherUid == request.auth.uid
+        );
+
+      allow update: if isAdmin()
+        || (
+          isActiveTeacher()
+          && resource.data.teacherUid == request.auth.uid
+          && request.resource.data.teacherUid == request.auth.uid
+        );
+
+      allow delete: if isAdmin()
+        || (
+          isActiveTeacher()
+          && resource.data.teacherUid == request.auth.uid
+        );
+    }
+
+    // 학생의 반 가입 요청.
+    match /joinRequests/{requestId} {
+      allow create: if signedIn()
+        && request.resource.data.studentAuthUid == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && exists(classDoc(request.resource.data.classId))
+        && get(classDoc(request.resource.data.classId)).data.active == true
+        && request.resource.data.teacherUid
+             == get(classDoc(request.resource.data.classId)).data.teacherUid;
+
+      allow read: if isAdmin()
+        || (
+          signedIn()
+          && (
+            resource.data.studentAuthUid == request.auth.uid
+            || resource.data.teacherUid == request.auth.uid
+          )
+        );
+
+      allow update: if isAdmin()
+        || (
+          isActiveTeacher()
+          && resource.data.teacherUid == request.auth.uid
+          && request.resource.data.teacherUid == resource.data.teacherUid
+          && request.resource.data.studentAuthUid == resource.data.studentAuthUid
+          && request.resource.data.classId == resource.data.classId
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    // 승인된 학생.
+    match /students/{studentUid} {
+      allow read: if isAdmin()
+        || (
+          signedIn()
+          && (
+            request.auth.uid == studentUid
+            || resource.data.teacherUid == request.auth.uid
+          )
+        );
+
+      allow create: if isAdmin()
+        || (
+          isActiveTeacher()
+          && request.resource.data.teacherUid == request.auth.uid
+        );
+
+      allow update: if isAdmin()
+        || (
+          isActiveTeacher()
+          && resource.data.teacherUid == request.auth.uid
+          && request.resource.data.teacherUid == resource.data.teacherUid
+        );
+
+      allow delete: if isAdmin()
+        || (
+          isActiveTeacher()
+          && resource.data.teacherUid == request.auth.uid
+        );
+    }
+
+    // 교사 프로필. 교사용 앱은 Google 로그인 사용자만 자신의 문서를 생성/수정할 수 있습니다.
+    match /teachers/{teacherUid} {
+      allow read: if isAdmin()
+        || (
+          signedIn()
+          && request.auth.uid == teacherUid
+        );
+
+      allow create: if isGoogleUser()
+        && request.auth.uid == teacherUid;
+
+      allow update: if isAdmin()
+        || (
+          isGoogleUser()
+          && request.auth.uid == teacherUid
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    // 시스템 공통 설정.
+    match /system/{docId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // 출석 기록.
+    // 학생은 본인 기록만 조회하고, 교사/관리자만 기록을 변경합니다.
+    match /attendance/{attendanceId} {
+      allow read: if isAdmin()
+        || (
+          signedIn()
+          && (
+            resource.data.studentUid == request.auth.uid
+            || resource.data.teacherUid == request.auth.uid
+          )
+        );
+
+      allow create: if isAdmin()
+        || (
+          isActiveTeacher()
+          && request.resource.data.teacherUid == request.auth.uid
+        );
+
+      allow update, delete: if isAdmin()
+        || (
+          isActiveTeacher()
+          && resource.data.teacherUid == request.auth.uid
+        );
+    }
+
+    // 관리자 변경 이력.
+    match /auditLogs/{logId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // 명시하지 않은 컬렉션은 기본 거부.
     match /{document=**} {
       allow read, write: if false;
     }
